@@ -9,11 +9,16 @@ const { AppError } = require("../utils/errors/app-error");
 const { StatusCodes } = require("http-status-codes");
 const serverConfig = require("../config/server-config");
 
+const { Enums } = require("../utils/common");
+
+const { BOOKED, INITIATED, PENDING, CANCELLED } = Enums.BOOKING_STATUS;
+
 const bookingRepository = new BookingRepository();
 
 async function createBooking(data) {
   const transaction = await db.sequelize.transaction();
   try {
+    console.log(data);
     const flight = await axios.get(
       `${ServerConfig.FLIGHT_SERVICE}/api/v1/flights/${data.flightId}`
     );
@@ -43,6 +48,61 @@ async function createBooking(data) {
   }
 }
 
+async function makePayment(data) {
+  const transaction = await db.sequelize.transaction();
+  try {
+    const bookingDetails = await bookingRepository.get(
+      data.bookingId,
+      transaction
+    );
+    if (bookingDetails.status == CANCELLED) {
+      throw new AppError(
+        "This ticket is already cancled!",
+        StatusCodes.BAD_REQUEST
+      );
+    }
+    const bookingTime = new Date(bookingDetails.createdAt);
+    const currentTime = new Date();
+    if (bookingTime - currentTime > 300000) {
+      await bookingRepository.update(
+        data.bookingId,
+        { status: CANCELLED },
+        transaction
+      );
+      throw new AppError(
+        "The booking times is expired!",
+        StatusCodes.BAD_REQUEST
+      );
+    }
+    if (bookingDetails.totalCost != data.totalCost) {
+      throw new AppError(
+        "The amount of payment do not match",
+        StatusCodes.BAD_REQUEST
+      );
+    }
+
+    if (bookingDetails.userId != data.userId) {
+      throw new AppError(
+        "The user id not match with payment user id!",
+        StatusCodes.BAD_REQUEST
+      );
+    }
+
+    await bookingRepository.update(
+      data.bookingId,
+      { status: BOOKED },
+      transaction
+    );
+
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    console.log(error);
+    throw error;
+  }
+}
+
 module.exports = {
   createBooking,
+  makePayment,
 };
