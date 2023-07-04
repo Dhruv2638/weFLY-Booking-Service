@@ -10,6 +10,7 @@ const { StatusCodes } = require("http-status-codes");
 const serverConfig = require("../config/server-config");
 
 const { Enums } = require("../utils/common");
+const { data } = require("../utils/common/error-response");
 
 const { BOOKED, INITIATED, PENDING, CANCELLED } = Enums.BOOKING_STATUS;
 
@@ -64,11 +65,7 @@ async function makePayment(data) {
     const bookingTime = new Date(bookingDetails.createdAt);
     const currentTime = new Date();
     if (bookingTime - currentTime > 300000) {
-      await bookingRepository.update(
-        data.bookingId,
-        { status: CANCELLED },
-        transaction
-      );
+      await cancleBooking(data.bookingId);
       throw new AppError(
         "The booking times is expired!",
         StatusCodes.BAD_REQUEST
@@ -94,6 +91,34 @@ async function makePayment(data) {
       transaction
     );
 
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    console.log(error);
+    throw error;
+  }
+}
+
+async function cancleBooking(bookingId) {
+  const transaction = await db.sequelize.transaction();
+  try {
+    const bookingDetails = await bookingRepository.get(bookingId, transaction);
+    if (bookingDetails.status == CANCELLED) {
+      await transaction.commit();
+      return true;
+    }
+    await axios.patch(
+      `${serverConfig.FLIGHT_SERVICE}/api/v1/flights/${bookingDetails.flightId}/seats`,
+      {
+        seats: bookingDetails.noOfSeats,
+        dec: 0,
+      }
+    );
+    await bookingRepository.update(
+      bookingId,
+      { status: CANCELLED },
+      transaction
+    );
     await transaction.commit();
   } catch (error) {
     await transaction.rollback();
