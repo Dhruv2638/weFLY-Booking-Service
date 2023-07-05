@@ -8,7 +8,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", apiRoutes);
-
+app.use("/bookingService/api", apiRoutes);
 app.listen(ServerConfig.PORT, () => {
   console.log(`successfully server started on port: ${ServerConfig.PORT}`);
   Logger.info("successfully started the server", "root", {});
